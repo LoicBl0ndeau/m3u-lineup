@@ -51,6 +51,7 @@ def _log_request(response):
 ATTR_RE = re.compile(r'([a-zA-Z0-9_-]+)="([^"]*)"')
 HLS_URI_ATTR_RE = re.compile(r'URI="([^"]+)"')
 ABSOLUTE_URI_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9+.\-]*://')
+RESOLUTION_RE = re.compile(r'RESOLUTION=(\d+x\d+)')
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources (
@@ -537,16 +538,30 @@ def api_virtual_check():
         vc_id, src_id, url = task
         try:
             resp = requests.get(url, stream=True, timeout=CHECK_TIMEOUT, headers={"User-Agent": USER_AGENT})
+            if resp.status_code >= 400:
+                resp.close()
+                return vc_id, src_id, "down", None
+            content_type = resp.headers.get("Content-Type", "")
+            first_chunk = next(resp.iter_content(chunk_size=8192), b"")
             resp.close()
-            status = "ok" if resp.status_code < 400 else "down"
+            looks_like_hls = (
+                first_chunk.lstrip().startswith(b"#EXTM3U")
+                or "mpegurl" in content_type.lower()
+                or url.lower().split("?")[0].endswith(".m3u8")
+            )
+            resolution = None
+            if looks_like_hls:
+                matches = RESOLUTION_RE.findall(first_chunk.decode("utf-8", errors="replace"))
+                if matches:
+                    resolution = max(matches, key=lambda r: int(r.split("x")[0]))
+            return vc_id, src_id, "ok", resolution
         except requests.RequestException:
-            status = "down"
-        return vc_id, src_id, status
+            return vc_id, src_id, "down", None
 
     results = {}
     with ThreadPoolExecutor(max_workers=20) as pool:
-        for vc_id, src_id, status in pool.map(check_one, tasks):
-            results.setdefault(vc_id, {})[src_id] = status
+        for vc_id, src_id, status, resolution in pool.map(check_one, tasks):
+            results.setdefault(vc_id, {})[src_id] = {"status": status, "resolution": resolution}
     return jsonify(results)
 
 

@@ -293,19 +293,22 @@ function renderVirtualChannels() {
 
     const srcResults = state.checkResults[vc.id] || null;
     const checkStatus = !srcResults ? ""
-      : Object.values(srcResults).every(s => s === "ok") ? "ok"
-      : Object.values(srcResults).some(s => s === "ok") ? "partial"
+      : Object.values(srcResults).every(r => r.status === "ok") ? "ok"
+      : Object.values(srcResults).some(r => r.status === "ok") ? "partial"
       : "down";
     const dotTitle = { ok: "Toutes les sources en ligne", partial: "Certaines sources hors ligne", down: "Toutes les sources hors ligne" }[checkStatus] || "Non vérifié";
 
     const sourcesHtml = vc.sources.map((src, idx) => {
-      const s = srcResults ? (srcResults[src.id] || "") : "";
+      const result = srcResults ? (srcResults[src.id] || null) : null;
+      const s = result ? result.status : "";
+      const res = result ? result.resolution : null;
       const sTitle = s === "ok" ? "En ligne" : s === "down" ? "Hors ligne" : "Non vérifié";
       return `
       <li class="source-row" data-source-id="${src.id}">
         <span class="source-rank">${idx + 1}</span>
         <span class="src-status ${s}" title="${sTitle}"></span>
         <span class="url" title="${escapeAttr(src.url)}">${escapeHtml(src.label || src.url)}</span>
+        ${res ? `<span class="src-res">${escapeHtml(res)}</span>` : ""}
         <span class="source-actions">
           <button class="icon small move-up" title="Monter" ${idx === 0 ? "disabled" : ""}>↑</button>
           <button class="icon small move-down" title="Descendre" ${idx === vc.sources.length - 1 ? "disabled" : ""}>↓</button>

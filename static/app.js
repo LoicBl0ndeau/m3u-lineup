@@ -1,5 +1,6 @@
 const state = {
   virtualChannels: [],
+  checkResults: {},
   pendingAdd: null, // { name, url }
 };
 
@@ -262,6 +263,23 @@ async function loadVirtualChannels() {
   renderVirtualChannels();
 }
 
+async function checkAllChannels() {
+  const btn = el("check-btn");
+  btn.disabled = true;
+  btn.textContent = "Vérification…";
+  try {
+    state.checkResults = await api("/api/virtual/check");
+    renderVirtualChannels();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Vérifier";
+  }
+}
+
+el("check-btn").addEventListener("click", checkAllChannels);
+
 function renderVirtualChannels() {
   const list = el("virtual-list");
   const empty = el("virtual-empty");
@@ -273,9 +291,20 @@ function renderVirtualChannels() {
     const card = document.createElement("li");
     card.className = "virtual-card" + (vc.active ? "" : " inactive");
 
-    const sourcesHtml = vc.sources.map((src, idx) => `
+    const srcResults = state.checkResults[vc.id] || null;
+    const checkStatus = !srcResults ? ""
+      : Object.values(srcResults).every(s => s === "ok") ? "ok"
+      : Object.values(srcResults).some(s => s === "ok") ? "partial"
+      : "down";
+    const dotTitle = { ok: "Toutes les sources en ligne", partial: "Certaines sources hors ligne", down: "Toutes les sources hors ligne" }[checkStatus] || "Non vérifié";
+
+    const sourcesHtml = vc.sources.map((src, idx) => {
+      const s = srcResults ? (srcResults[src.id] || "") : "";
+      const sTitle = s === "ok" ? "En ligne" : s === "down" ? "Hors ligne" : "Non vérifié";
+      return `
       <li class="source-row" data-source-id="${src.id}">
         <span class="source-rank">${idx + 1}</span>
+        <span class="src-status ${s}" title="${sTitle}"></span>
         <span class="url" title="${escapeAttr(src.url)}">${escapeHtml(src.label || src.url)}</span>
         <span class="source-actions">
           <button class="icon small move-up" title="Monter" ${idx === 0 ? "disabled" : ""}>↑</button>
@@ -283,10 +312,12 @@ function renderVirtualChannels() {
           <button class="icon small remove-source" title="Retirer">✕</button>
         </span>
       </li>
-    `).join("");
+    `;
+    }).join("");
 
     card.innerHTML = `
       <div class="virtual-card-head">
+        <span class="vc-status ${checkStatus}" title="${dotTitle}"></span>
         <label class="toggle">
           <input type="checkbox" class="active-toggle" ${vc.active ? "checked" : ""}>
           <span class="track"></span>

@@ -15,6 +15,7 @@ import sqlite3
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from urllib.parse import urljoin
 
@@ -27,6 +28,7 @@ from flask import (
 DB_PATH = os.environ.get("DB_PATH", "/data/lineup.sqlite3")
 FETCH_TIMEOUT = int(os.environ.get("FETCH_TIMEOUT", "20"))
 STREAM_TIMEOUT = int(os.environ.get("STREAM_TIMEOUT", "8"))
+CHECK_TIMEOUT = int(os.environ.get("CHECK_TIMEOUT", "5"))
 USER_AGENT = os.environ.get("STREAM_USER_AGENT", "Mozilla/5.0 (Lineup)")
 LOGO_CACHE_DIR = os.environ.get("LOGO_CACHE_DIR", "/data/logos")
 
@@ -520,6 +522,32 @@ def api_virtual_reorder_sources(vc_id):
     db.commit()
     row = db.execute("SELECT * FROM virtual_channels WHERE id = ?", (vc_id,)).fetchone()
     return jsonify(serialize_virtual_channel(db, row))
+
+
+@app.route("/api/virtual/check")
+def api_virtual_check():
+    db = get_db()
+    rows = db.execute(
+        "SELECT vs.id AS src_id, vs.virtual_channel_id AS vc_id, vs.url "
+        "FROM virtual_sources vs"
+    ).fetchall()
+    tasks = [(r["vc_id"], r["src_id"], r["url"]) for r in rows]
+
+    def check_one(task):
+        vc_id, src_id, url = task
+        try:
+            resp = requests.get(url, stream=True, timeout=CHECK_TIMEOUT, headers={"User-Agent": USER_AGENT})
+            resp.close()
+            status = "ok" if resp.status_code < 400 else "down"
+        except requests.RequestException:
+            status = "down"
+        return vc_id, src_id, status
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        for vc_id, src_id, status in pool.map(check_one, tasks):
+            results.setdefault(vc_id, {})[src_id] = status
+    return jsonify(results)
 
 
 # ---------------------------------------------------------------------------

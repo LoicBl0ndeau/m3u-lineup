@@ -1,18 +1,18 @@
 services:
   lineup:
-    build: .
+    image: ghcr.io/loicbl0ndeau/m3u-lineup:latest
     container_name: lineup
     restart: unless-stopped
     environment:
       - DB_PATH=/data/lineup.sqlite3
-      - LISTEN_PORT=8080
+      - LISTEN_PORT=9999
       - FETCH_TIMEOUT=20
       - STREAM_TIMEOUT=8
       - TZ=Europe/Paris
     volumes:
       - lineup-data:/data
     ports:
-      - "127.0.0.1:8082:8080"
+      - "127.0.0.1:9999:9999"
 
 volumes:
   lineup-data:

@@ -14,5 +14,18 @@ services:
     ports:
       - "127.0.0.1:9999:9999"
 
+    # --- hardening ---
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN      # entrypoint.sh doit pouvoir chown /data au démarrage
+      - SETUID     # requis par su-exec pour passer à l'utilisateur non-root
+      - SETGID     # idem, côté groupe
+    security_opt:
+      - no-new-privileges:true
+
 volumes:
   lineup-data:

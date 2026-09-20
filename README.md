@@ -39,7 +39,7 @@ Crée un fichier `docker-compose.yml` :
 ```yaml
 services:
   lineup:
-    image: ghcr.io/loicblondeau/m3u-lineup:latest
+    image: ghcr.io/loicbl0ndeau/m3u-lineup:latest
     container_name: lineup
     restart: unless-stopped
     environment:
@@ -52,6 +52,19 @@ services:
       - lineup-data:/data
     ports:
       - "127.0.0.1:9999:9999"
+
+    # --- hardening ---
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN      # entrypoint.sh doit pouvoir chown /data au démarrage
+      - SETUID     # requis par su-exec pour passer à l'utilisateur non-root
+      - SETGID     # idem, côté groupe
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   lineup-data:

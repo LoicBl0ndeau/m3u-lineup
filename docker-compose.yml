@@ -1,0 +1,18 @@
+services:
+  lineup:
+    build: .
+    container_name: lineup
+    restart: unless-stopped
+    environment:
+      - DB_PATH=/data/lineup.sqlite3
+      - LISTEN_PORT=8080
+      - FETCH_TIMEOUT=20
+      - STREAM_TIMEOUT=8
+      - TZ=Europe/Paris
+    volumes:
+      - lineup-data:/data
+    ports:
+      - "127.0.0.1:8082:8080"
+
+volumes:
+  lineup-data:

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lineup — compose ta liste de chaînes</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-dot" aria-hidden="true"></span>
+    <h1>Lineup</h1>
+  </div>
+  <p class="tagline">Compose ta liste, une chaîne qui marche à la fois.</p>
+</header>
+
+<section class="panel sources-panel" aria-labelledby="sources-heading">
+  <div class="panel-head">
+    <h2 id="sources-heading">Sources m3u</h2>
+    <div class="refresh-setting">
+      <label for="refresh-value">Rafraîchissement auto</label>
+      <input type="number" id="refresh-value" min="0" step="1" inputmode="numeric">
+      <select id="refresh-unit">
+        <option value="60">minutes</option>
+        <option value="3600">heures</option>
+        <option value="86400">jours</option>
+      </select>
+      <button type="button" id="save-refresh-btn" class="small ghost">Enregistrer</button>
+      <span id="refresh-status" class="refresh-status"></span>
+    </div>
+  </div>
+
+  <form id="source-form" class="fetch-form">
+    <input id="source-url" type="url" placeholder="Lien du m3u source (https://...)" required>
+    <input id="source-label" type="text" placeholder="Nom (optionnel)" class="source-label-input">
+    <button type="submit">Ajouter</button>
+  </form>
+
+  <ul id="sources-list" class="sources-list" role="list"></ul>
+</section>
+
+<main class="layout">
+
+  <section class="panel" aria-labelledby="source-heading">
+    <div class="panel-head">
+      <h2 id="source-heading">Chaînes source</h2>
+      <span id="source-count" class="count">0</span>
+    </div>
+
+    <div class="filters">
+      <input id="search-input" type="search" placeholder="Rechercher une chaîne…">
+      <select id="group-filter">
+        <option value="">Tous les groupes</option>
+      </select>
+    </div>
+
+    <ul id="channel-list" class="channel-list" role="list"></ul>
+  </section>
+
+  <section class="panel" aria-labelledby="lineup-heading">
+    <div class="panel-head">
+      <h2 id="lineup-heading">Ta lineup</h2>
+      <button id="export-btn" class="export-btn">Exporter le .m3u</button>
+    </div>
+
+    <ul id="virtual-list" class="virtual-list" role="list"></ul>
+    <p id="virtual-empty" class="empty-state">
+      Aucune chaîne pour l'instant. Ajoute-en une depuis la colonne de gauche.
+    </p>
+  </section>
+
+</main>
+
+<div id="add-popover" class="popover" hidden>
+  <div class="popover-inner">
+    <h3>Ajouter <span id="add-popover-name"></span></h3>
+    <label class="popover-label">Nouvelle chaîne</label>
+    <div class="popover-row">
+      <input id="new-channel-name" type="text" placeholder="Nom de la chaîne">
+      <button id="create-channel-btn">Créer</button>
+    </div>
+    <label class="popover-label">Ou ajouter comme lien de secours à</label>
+    <select id="existing-channel-select">
+      <option value="">— choisir —</option>
+    </select>
+    <div class="popover-actions">
+      <button id="add-to-existing-btn">Ajouter</button>
+      <button id="cancel-add-btn" class="ghost">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

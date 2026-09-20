@@ -691,4 +691,8 @@ def scheduler_loop():
 if __name__ == "__main__":
     init_db()
     threading.Thread(target=scheduler_loop, daemon=True).start()
-    app.run(host="0.0.0.0", port=int(os.environ.get("LISTEN_PORT", "8080")), threaded=True)
+
+    from waitress import serve
+
+    port = int(os.environ.get("LISTEN_PORT", "9999"))
+    serve(app, host="0.0.0.0", port=port, threads=8)

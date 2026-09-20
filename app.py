@@ -8,9 +8,11 @@ links into a single "virtual channel" with automatic fallback, then
 export a clean .m3u ready for Jellyfin's M3U Tuner.
 """
 
+import logging
 import os
 import re
 import sqlite3
+import sys
 import threading
 import time
 from contextlib import closing
@@ -28,7 +30,21 @@ STREAM_TIMEOUT = int(os.environ.get("STREAM_TIMEOUT", "8"))
 USER_AGENT = os.environ.get("STREAM_USER_AGENT", "Mozilla/5.0 (Lineup)")
 LOGO_CACHE_DIR = os.environ.get("LOGO_CACHE_DIR", "/data/logos")
 
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+log = logging.getLogger("lineup")
+
 app = Flask(__name__)
+
+
+@app.after_request
+def _log_request(response):
+    log.info("%s %s %s", request.method, request.path, response.status_code)
+    return response
 
 ATTR_RE = re.compile(r'([a-zA-Z0-9_-]+)="([^"]*)"')
 HLS_URI_ATTR_RE = re.compile(r'URI="([^"]+)"')
@@ -220,6 +236,7 @@ def refresh_source(db, source_row):
         if not channels:
             raise ValueError("Aucune chaîne trouvée dans ce m3u")
     except Exception as e:
+        log.warning("source %s refresh failed: %s", source_row["url"], e)
         db.execute(
             "UPDATE sources SET last_fetched_at = ?, last_status = 'error', last_error = ? WHERE id = ?",
             (now_iso(), str(e), source_row["id"]),
@@ -255,6 +272,7 @@ def refresh_source(db, source_row):
         (now_iso(), len(channels), source_row["id"]),
     )
     db.commit()
+    log.info("source %s refreshed: %d channels, %d links updated", source_row["url"], len(channels), updated_links)
     return {"ok": True, "count": len(channels), "updated_links": updated_links}
 
 
@@ -657,8 +675,10 @@ def stream(vc_id):
             )
         except requests.RequestException as e:
             last_error = str(e)
+            log.warning("stream %d: source %s failed: %s", vc_id, src["url"], e)
             continue
 
+    log.error("stream %d: all sources failed, last error: %s", vc_id, last_error)
     return Response(f"Toutes les sources ont échoué : {last_error}", status=503)
 
 
@@ -683,8 +703,8 @@ def scheduler_loop():
                                 due = True
                         if due:
                             refresh_source(db, source_row)
-        except Exception:
-            pass  # never let a transient error kill the background loop
+        except Exception as e:
+            log.error("scheduler error: %s", e)
         time.sleep(30)
 
 

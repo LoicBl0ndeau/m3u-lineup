@@ -16,8 +16,9 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+import base64
 from contextlib import closing
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 import requests
 from flask import (
@@ -637,9 +638,27 @@ def channel_logo(vc_id):
 # Streaming proxy with automatic fallback
 # ---------------------------------------------------------------------------
 
-def rewrite_hls_manifest(text, base_url):
-    """Turn relative segment/playlist URIs in an HLS manifest into absolute
-    ones, so the player fetches them straight from the origin server."""
+def resolve_segment_uri(uri):
+    """Extract the real segment URL from beacon/analytics redirect URLs.
+    Some IPTV servers wrap segment URLs in a tracking beacon of the form
+    .../beacon?redirect_url=https%3A%2F%2F...%2Fsegment.ts — FFmpeg's HLS
+    parser rejects these because the beacon path has no recognized extension."""
+    params = parse_qs(urlparse(uri).query)
+    if "redirect_url" in params:
+        return unquote(params["redirect_url"][0])
+    return uri
+
+
+def rewrite_hls_manifest(text, base_url, proxy_base=None):
+    """Rewrite URIs in an HLS manifest to absolute URLs.
+
+    For master playlists, if proxy_base is given, variant playlist URLs are
+    routed through /hls-proxy/ so Lineup can intercept the media playlist and
+    resolve any beacon segment URLs before FFmpeg sees them.
+    Media playlist segment URLs are resolved directly (beacon → real .ts URL).
+    """
+    is_master = "#EXT-X-STREAM-INF" in text
+
     out_lines = []
     for line in text.splitlines():
         stripped = line.strip()
@@ -647,15 +666,68 @@ def rewrite_hls_manifest(text, base_url):
             out_lines.append(line)
             continue
         if stripped.startswith("#"):
+            if stripped.startswith("#EXT-X-MEDIA") and "TYPE=SUBTITLES" in stripped:
+                continue
+            if stripped.startswith("#EXT-X-STREAM-INF"):
+                line = re.sub(r',?SUBTITLES="[^"]*"', "", line)
             def _repl(m):
                 uri = m.group(1)
-                if ABSOLUTE_URI_RE.match(uri):
-                    return m.group(0)
-                return f'URI="{urljoin(base_url, uri)}"'
+                abs_uri = uri if ABSOLUTE_URI_RE.match(uri) else urljoin(base_url, uri)
+                return f'URI="{abs_uri}"'
             out_lines.append(HLS_URI_ATTR_RE.sub(_repl, line))
         else:
-            out_lines.append(stripped if ABSOLUTE_URI_RE.match(stripped) else urljoin(base_url, stripped))
+            abs_uri = stripped if ABSOLUTE_URI_RE.match(stripped) else urljoin(base_url, stripped)
+            if is_master and proxy_base:
+                encoded = base64.urlsafe_b64encode(abs_uri.encode()).decode().rstrip("=")
+                abs_uri = f"{proxy_base}/hls-proxy/{encoded}"
+            else:
+                abs_uri = resolve_segment_uri(abs_uri)
+            out_lines.append(abs_uri)
     return "\n".join(out_lines) + "\n"
+
+
+@app.route("/hls-proxy/<encoded>")
+def hls_proxy(encoded):
+    padding = (4 - len(encoded) % 4) % 4
+    try:
+        url = base64.urlsafe_b64decode(encoded + "=" * padding).decode()
+    except Exception:
+        abort(400)
+
+    try:
+        resp = requests.get(url, stream=True, timeout=STREAM_TIMEOUT, headers={"User-Agent": USER_AGENT})
+        if resp.status_code >= 400:
+            abort(resp.status_code)
+
+        content_type = resp.headers.get("Content-Type", "")
+        first_chunk = next(resp.iter_content(chunk_size=8192), b"")
+        looks_like_hls = (
+            first_chunk.lstrip().startswith(b"#EXTM3U")
+            or "mpegurl" in content_type.lower()
+        )
+
+        if looks_like_hls:
+            body = first_chunk + b"".join(resp.iter_content(chunk_size=8192))
+            resp.close()
+            manifest_text = body.decode("utf-8", errors="replace")
+            # Rewrite media playlist: resolve beacon URLs, no further proxying needed
+            rewritten = rewrite_hls_manifest(manifest_text, url)
+            return Response(rewritten, mimetype="application/vnd.apple.mpegurl")
+
+        def generate(r=resp, first=first_chunk):
+            try:
+                if first:
+                    yield first
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        yield chunk
+            finally:
+                r.close()
+
+        return Response(stream_with_context(generate()), content_type=content_type or "video/mp2t")
+    except requests.RequestException as e:
+        log.error("hls-proxy %s: %s", url, e)
+        abort(502)
 
 
 @app.route("/stream/<int:vc_id>")
@@ -699,7 +771,8 @@ def stream(vc_id):
                 manifest_text = body.decode("utf-8", errors="replace")
                 base_url = upstream.url  # final URL after redirects
                 upstream.close()
-                rewritten = rewrite_hls_manifest(manifest_text, base_url)
+                proxy_base = request.url_root.rstrip("/")
+                rewritten = rewrite_hls_manifest(manifest_text, base_url, proxy_base=proxy_base)
                 return Response(rewritten, mimetype="application/vnd.apple.mpegurl")
 
             def generate(resp=upstream, first=first_chunk, it=chunk_iter):

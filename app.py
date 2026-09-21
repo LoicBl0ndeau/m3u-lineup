@@ -771,6 +771,17 @@ def stream(vc_id):
                 manifest_text = body.decode("utf-8", errors="replace")
                 base_url = upstream.url  # final URL after redirects
                 upstream.close()
+                is_master = "#EXT-X-STREAM-INF" in manifest_text
+                if is_master:
+                    resolutions = re.findall(r'RESOLUTION=(\d+x\d+)', manifest_text)
+                    codecs_list = re.findall(r'CODECS="([^"]*)"', manifest_text)
+                    bandwidths = re.findall(r'BANDWIDTH=(\d+)', manifest_text)
+                    log.info(
+                        "stream %d: MASTER PLAYLIST — %d variants, resolutions=%s, codecs=%s, bandwidths=%s",
+                        vc_id, len(bandwidths), resolutions, codecs_list, bandwidths,
+                    )
+                else:
+                    log.info("stream %d: media playlist (single quality)", vc_id)
                 proxy_base = request.url_root.rstrip("/")
                 rewritten = rewrite_hls_manifest(manifest_text, base_url, proxy_base=proxy_base)
                 return Response(rewritten, mimetype="application/vnd.apple.mpegurl")

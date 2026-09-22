@@ -683,11 +683,13 @@ def rewrite_hls_manifest(text, base_url, proxy_base=None):
                 abs_uri = f"{proxy_base}/hls-proxy/{encoded}"
             else:
                 abs_uri = resolve_segment_uri(abs_uri)
-                # Segment URL still looks like a beacon (no recognized media extension):
-                # proxy it so requests follows the HTTP redirect to the real .ts file.
+                # Segment URL has no recognised media extension → tracking/beacon URL.
+                # Drop it (and the preceding #EXTINF) so FFmpeg never requests it and
+                # does not spin into retry loops when the beacon server returns errors.
                 if proxy_base and not MEDIA_SEGMENT_EXT_RE.search(urlparse(abs_uri).path):
-                    encoded = base64.urlsafe_b64encode(abs_uri.encode()).decode().rstrip("=")
-                    abs_uri = f"{proxy_base}/hls-proxy/{encoded}.ts"
+                    if out_lines and out_lines[-1].strip().startswith("#EXTINF"):
+                        out_lines.pop()
+                    continue
             out_lines.append(abs_uri)
     return "\n".join(out_lines) + "\n"
 

@@ -20,10 +20,13 @@ propre — prête pour Jellyfin, VLC, ou tout autre lecteur compatible M3U.
 - **Fallback automatique** : regroupe plusieurs liens pour une même
   chaîne (ex. une source HD + une source de secours) — si le premier ne
   répond pas, le suivant est essayé automatiquement.
+- **Réordonnancement par glisser-déposer** : trie ta lineup à la main,
+  l'ordre définit les numéros de chaîne (`tvg-chno`) dans l'export.
 - **Rafraîchissement automatique** : relance le téléchargement de tes
   sources à une fréquence personnalisable.
-- **Support HLS** : les manifests `.m3u8` sont détectés et réécrits pour
-  que le lecteur récupère les segments directement depuis la source.
+- **Support HLS avancé** : les manifests `.m3u8` sont détectés et
+  réécrits pour que le lecteur récupère les segments directement depuis
+  la source ; les URLs de tracking/beacon sont filtrées automatiquement.
 - **Cache de logos** : les images des chaînes sont mises en cache
   localement, une seule fois.
 - **Léger** : un seul conteneur Python/Flask + SQLite, pensé pour tourner
@@ -86,7 +89,9 @@ L'interface est disponible sur `http://<ton-serveur>:9999`.
    lineup, ou ajoute le lien comme secours à une chaîne déjà créée.
 3. Réordonne les liens d'une chaîne (le premier est essayé en premier),
    active/désactive, renomme ou supprime depuis **Ta lineup**.
-4. Clique **Exporter le .m3u** pour télécharger la playlist finale, ou
+4. Fais glisser les cartes de chaîne pour les réordonner — l'ordre
+   définit les numéros de chaîne dans le fichier exporté.
+5. Clique **Exporter le .m3u** pour télécharger la playlist finale, ou
    donne directement l'URL `http://<ton-serveur>:9999/api/export` à ton
    lecteur (dans Jellyfin : **Dashboard → Live TV → Tuner Devices → M3U
    Tuner**).

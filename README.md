@@ -22,6 +22,11 @@ propre — prête pour Jellyfin, VLC, ou tout autre lecteur compatible M3U.
   répond pas, le suivant est essayé automatiquement.
 - **Réordonnancement par glisser-déposer** : trie ta lineup à la main,
   l'ordre définit les numéros de chaîne (`tvg-chno`) dans l'export.
+- **Vérification automatique des streams** : Lineup teste l'état de chaque
+  source à une fréquence configurable et encode le résultat dans le nom de
+  la chaîne exportée (`🟢 Disponible`, `🟡 Au moins une source non disponible`, `🔴 Non disponible`). Dans Jellyfin,
+  configure le même intervalle de rafraîchissement du tuner M3U pour voir
+  l'état des chaînes directement dans l'interface, avant même de cliquer.
 - **Rafraîchissement automatique** : relance le téléchargement de tes
   sources à une fréquence personnalisable.
 - **Support HLS avancé** : les manifests `.m3u8` sont détectés et
@@ -91,10 +96,15 @@ L'interface est disponible sur `http://<ton-serveur>:9999`.
    active/désactive, renomme ou supprime depuis **Ta lineup**.
 4. Fais glisser les cartes de chaîne pour les réordonner — l'ordre
    définit les numéros de chaîne dans le fichier exporté.
-5. Clique **Exporter le .m3u** pour télécharger la playlist finale, ou
+5. Configure l'intervalle de **Vérification chaînes** dans le panneau
+   Sources (défaut : 1 heure). Lineup testera automatiquement chaque
+   source en arrière-plan ; le résultat apparaît sous forme de point
+   coloré dans l'interface et sous forme d'emoji dans le `.m3u` exporté.
+6. Clique **Exporter le .m3u** pour télécharger la playlist finale, ou
    donne directement l'URL `http://<ton-serveur>:9999/api/export` à ton
    lecteur (dans Jellyfin : **Dashboard → Live TV → Tuner Devices → M3U
-   Tuner**).
+   Tuner**). Pour voir les emojis d'état se mettre à jour dans Jellyfin,
+   configure le même intervalle de rafraîchissement sur ton tuner M3U.
 
 ## ⚙️ Configuration
 

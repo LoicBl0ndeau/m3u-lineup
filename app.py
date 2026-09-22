@@ -53,6 +53,7 @@ ATTR_RE = re.compile(r'([a-zA-Z0-9_-]+)="([^"]*)"')
 HLS_URI_ATTR_RE = re.compile(r'URI="([^"]+)"')
 ABSOLUTE_URI_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9+.\-]*://')
 RESOLUTION_RE = re.compile(r'RESOLUTION=(\d+x\d+)')
+MEDIA_SEGMENT_EXT_RE = re.compile(r'\.(ts|aac|mp4|m4s|m4v|fmp4|cmfv|cmfa|cmft)(\?.*)?$', re.IGNORECASE)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources (
@@ -682,6 +683,11 @@ def rewrite_hls_manifest(text, base_url, proxy_base=None):
                 abs_uri = f"{proxy_base}/hls-proxy/{encoded}"
             else:
                 abs_uri = resolve_segment_uri(abs_uri)
+                # Segment URL still looks like a beacon (no recognized media extension):
+                # proxy it so requests follows the HTTP redirect to the real .ts file.
+                if proxy_base and not MEDIA_SEGMENT_EXT_RE.search(urlparse(abs_uri).path):
+                    encoded = base64.urlsafe_b64encode(abs_uri.encode()).decode().rstrip("=")
+                    abs_uri = f"{proxy_base}/hls-proxy/{encoded}"
             out_lines.append(abs_uri)
     return "\n".join(out_lines) + "\n"
 
@@ -710,8 +716,8 @@ def hls_proxy(encoded):
             body = first_chunk + b"".join(resp.iter_content(chunk_size=8192))
             resp.close()
             manifest_text = body.decode("utf-8", errors="replace")
-            # Rewrite media playlist: resolve beacon URLs, no further proxying needed
-            rewritten = rewrite_hls_manifest(manifest_text, url)
+            proxy_base = request.url_root.rstrip("/")
+            rewritten = rewrite_hls_manifest(manifest_text, url, proxy_base=proxy_base)
             return Response(rewritten, mimetype="application/vnd.apple.mpegurl")
 
         def generate(r=resp, first=first_chunk):

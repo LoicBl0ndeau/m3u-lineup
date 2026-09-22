@@ -83,7 +83,8 @@ CREATE TABLE IF NOT EXISTS virtual_channels (
     group_title TEXT DEFAULT '',
     logo TEXT DEFAULT '',
     active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS virtual_sources (
@@ -143,12 +144,19 @@ def migrate_schema(db):
         ("imported_channels", "source_id", "INTEGER REFERENCES sources(id) ON DELETE CASCADE"),
         ("virtual_sources", "source_id", "INTEGER REFERENCES sources(id) ON DELETE SET NULL"),
         ("virtual_sources", "match_key", "TEXT DEFAULT ''"),
+        ("virtual_channels", "position", "INTEGER NOT NULL DEFAULT 0"),
     ]
+    newly_added = set()
     for table, col, decl in additions:
         try:
             db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+            newly_added.add((table, col))
         except sqlite3.OperationalError:
             pass  # column already exists
+    if ("virtual_channels", "position") in newly_added:
+        rows = db.execute("SELECT id FROM virtual_channels ORDER BY id").fetchall()
+        for pos, row in enumerate(rows):
+            db.execute("UPDATE virtual_channels SET position = ? WHERE id = ?", (pos, row[0]))
     # Channels imported by the old single-source flow have no source_id and
     # can no longer be refreshed or matched against anything — drop them.
     db.execute("DELETE FROM imported_channels WHERE source_id IS NULL")
@@ -416,7 +424,7 @@ def serialize_virtual_channel(db, row):
 @app.route("/api/virtual", methods=["GET"])
 def api_virtual_list():
     db = get_db()
-    rows = db.execute("SELECT * FROM virtual_channels ORDER BY id").fetchall()
+    rows = db.execute("SELECT * FROM virtual_channels ORDER BY position").fetchall()
     return jsonify([serialize_virtual_channel(db, r) for r in rows])
 
 
@@ -430,10 +438,11 @@ def api_virtual_create():
     logo = data.get("logo") or (source or {}).get("tvg_logo", "") or ""
 
     db = get_db()
+    max_pos = db.execute("SELECT COALESCE(MAX(position), -1) FROM virtual_channels").fetchone()[0]
     cur = db.execute(
-        "INSERT INTO virtual_channels (name, group_title, logo, active, created_at) "
-        "VALUES (?, ?, ?, 1, ?)",
-        (name, data.get("group_title", ""), logo, time.strftime("%Y-%m-%dT%H:%M:%S")),
+        "INSERT INTO virtual_channels (name, group_title, logo, active, created_at, position) "
+        "VALUES (?, ?, ?, 1, ?, ?)",
+        (name, data.get("group_title", ""), logo, time.strftime("%Y-%m-%dT%H:%M:%S"), max_pos + 1),
     )
     vc_id = cur.lastrowid
     if source and source.get("url"):
@@ -464,10 +473,26 @@ def api_virtual_update(vc_id):
     return jsonify(serialize_virtual_channel(db, row))
 
 
+@app.route("/api/virtual/reorder", methods=["POST"])
+def api_virtual_reorder():
+    data = request.get_json(force=True, silent=True) or {}
+    ids = data.get("ids", [])
+    if not isinstance(ids, list):
+        return jsonify(error="ids doit être une liste"), 400
+    db = get_db()
+    for pos, vid in enumerate(ids):
+        db.execute("UPDATE virtual_channels SET position = ? WHERE id = ?", (pos, vid))
+    db.commit()
+    return jsonify(ok=True)
+
+
 @app.route("/api/virtual/<int:vc_id>", methods=["DELETE"])
 def api_virtual_delete(vc_id):
     db = get_db()
     db.execute("DELETE FROM virtual_channels WHERE id = ?", (vc_id,))
+    rows = db.execute("SELECT id FROM virtual_channels ORDER BY position").fetchall()
+    for pos, row in enumerate(rows):
+        db.execute("UPDATE virtual_channels SET position = ? WHERE id = ?", (pos, row["id"]))
     db.commit()
     return jsonify(ok=True)
 
@@ -575,22 +600,24 @@ def api_virtual_check():
 def api_export():
     db = get_db()
     rows = db.execute(
-        "SELECT * FROM virtual_channels WHERE active = 1 ORDER BY name COLLATE NOCASE"
+        "SELECT * FROM virtual_channels WHERE active = 1 ORDER BY position"
     ).fetchall()
     base = request.url_root.rstrip("/")
 
     lines = ["#EXTM3U"]
+    chno = 1
     for row in rows:
         has_source = db.execute(
             "SELECT 1 FROM virtual_sources WHERE virtual_channel_id = ? LIMIT 1", (row["id"],)
         ).fetchone()
         if not has_source:
             continue
-        attrs = f'tvg-id="{row["id"]}" group-title="{row["group_title"] or "Lineup"}"'
+        attrs = f'tvg-id="{row["id"]}" tvg-chno="{chno}" group-title="{row["group_title"] or "Lineup"}"'
         if row["logo"]:
             attrs += f' tvg-logo="{base}/channels/logos/{row["id"]}/cache"'
         lines.append(f'#EXTINF:-1 {attrs},{row["name"]}')
         lines.append(f"{base}/stream/{row['id']}")
+        chno += 1
 
     body = "\n".join(lines) + "\n"
     return Response(

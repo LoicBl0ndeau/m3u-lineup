@@ -342,9 +342,25 @@ button.danger {
   border-radius: var(--radius);
   margin-bottom: 12px;
   overflow: hidden;
+  transition: border-color .15s, opacity .15s;
 }
 
 .virtual-card.inactive { opacity: 0.5; }
+.virtual-card.dragging { opacity: 0.35; }
+.virtual-card.drag-over { border-color: var(--accent); }
+
+.virtual-list.is-dragging .virtual-card * { pointer-events: none; }
+
+.drag-handle {
+  cursor: grab;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.drag-handle:hover { color: var(--text); }
 
 .vc-status, .src-status {
   width: 8px;

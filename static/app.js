@@ -4,6 +4,8 @@ const state = {
   pendingAdd: null, // { name, url }
 };
 
+let dragSrcId = null;
+
 const el = (id) => document.getElementById(id);
 
 function debounce(fn, delay) {
@@ -320,6 +322,7 @@ function renderVirtualChannels() {
 
     card.innerHTML = `
       <div class="virtual-card-head">
+        <span class="drag-handle" draggable="true" title="Réordonner">⠿</span>
         <span class="vc-status ${checkStatus}" title="${dotTitle}"></span>
         <label class="toggle">
           <input type="checkbox" class="active-toggle" ${vc.active ? "checked" : ""}>
@@ -351,6 +354,50 @@ function renderVirtualChannels() {
     });
     card.querySelectorAll(".move-down").forEach((btn) => {
       btn.addEventListener("click", (e) => reorderSource(vc, e.target.closest(".source-row").dataset.sourceId, 1));
+    });
+
+    const handle = card.querySelector(".drag-handle");
+
+    handle.addEventListener("dragstart", (e) => {
+      dragSrcId = vc.id;
+      card.classList.add("dragging");
+      list.classList.add("is-dragging");
+      e.dataTransfer.effectAllowed = "move";
+    });
+
+    handle.addEventListener("dragend", () => {
+      dragSrcId = null;
+      card.classList.remove("dragging");
+      list.classList.remove("is-dragging");
+      list.querySelectorAll(".virtual-card.drag-over").forEach((c) => c.classList.remove("drag-over"));
+    });
+
+    card.addEventListener("dragover", (e) => {
+      if (dragSrcId == null || dragSrcId === vc.id) return;
+      e.preventDefault();
+      list.querySelectorAll(".virtual-card.drag-over").forEach((c) => { if (c !== card) c.classList.remove("drag-over"); });
+      card.classList.add("drag-over");
+    });
+
+    card.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      card.classList.remove("drag-over");
+      if (dragSrcId == null || dragSrcId === vc.id) return;
+      const srcId = dragSrcId;
+      const ids = state.virtualChannels.map((v) => v.id);
+      const from = ids.indexOf(srcId);
+      const to = ids.indexOf(vc.id);
+      const newIds = [...ids];
+      newIds.splice(from, 1);
+      newIds.splice(to, 0, srcId);
+      state.virtualChannels = newIds.map((id) => state.virtualChannels.find((v) => v.id === id));
+      renderVirtualChannels();
+      try {
+        await api("/api/virtual/reorder", { method: "POST", body: JSON.stringify({ ids: newIds }) });
+      } catch (err) {
+        alert(err.message);
+        await loadVirtualChannels();
+      }
     });
 
     list.appendChild(card);

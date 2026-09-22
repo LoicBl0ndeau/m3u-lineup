@@ -49,6 +49,8 @@ def _log_request(response):
     log.info("%s %s %s", request.method, request.path, response.status_code)
     return response
 
+STATUS_EMOJI = {"ok": "🟢", "partial": "🟡", "down": "🔴"}
+
 ATTR_RE = re.compile(r'([a-zA-Z0-9_-]+)="([^"]*)"')
 HLS_URI_ATTR_RE = re.compile(r'URI="([^"]+)"')
 ABSOLUTE_URI_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9+.\-]*://')
@@ -84,7 +86,9 @@ CREATE TABLE IF NOT EXISTS virtual_channels (
     logo TEXT DEFAULT '',
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
-    position INTEGER NOT NULL DEFAULT 0
+    position INTEGER NOT NULL DEFAULT 0,
+    check_status TEXT DEFAULT '',
+    last_checked_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS virtual_sources (
@@ -94,7 +98,8 @@ CREATE TABLE IF NOT EXISTS virtual_sources (
     match_key TEXT DEFAULT '',
     label TEXT DEFAULT '',
     url TEXT NOT NULL,
-    position INTEGER NOT NULL
+    position INTEGER NOT NULL,
+    check_status TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -145,6 +150,9 @@ def migrate_schema(db):
         ("virtual_sources", "source_id", "INTEGER REFERENCES sources(id) ON DELETE SET NULL"),
         ("virtual_sources", "match_key", "TEXT DEFAULT ''"),
         ("virtual_channels", "position", "INTEGER NOT NULL DEFAULT 0"),
+        ("virtual_channels", "check_status", "TEXT DEFAULT ''"),
+        ("virtual_channels", "last_checked_at", "TEXT"),
+        ("virtual_sources", "check_status", "TEXT DEFAULT ''"),
     ]
     newly_added = set()
     for table, col, decl in additions:
@@ -346,22 +354,38 @@ def api_sources_refresh(source_id):
 @app.route("/api/settings", methods=["GET"])
 def api_settings_get():
     db = get_db()
-    interval = int(get_setting(db, "refresh_interval_seconds", "0") or 0)
-    return jsonify(refresh_interval_seconds=interval)
+    refresh = int(get_setting(db, "refresh_interval_seconds", "0") or 0)
+    check = int(get_setting(db, "check_interval_seconds", "3600") or 3600)
+    return jsonify(refresh_interval_seconds=refresh, check_interval_seconds=check)
 
 
 @app.route("/api/settings", methods=["POST"])
 def api_settings_update():
     data = request.get_json(force=True, silent=True) or {}
-    try:
-        interval = max(0, int(data.get("refresh_interval_seconds", 0) or 0))
-    except (TypeError, ValueError):
-        return jsonify(error="Valeur invalide"), 400
-    if 0 < interval < 60:
-        return jsonify(error="L'intervalle minimum est de 60 secondes."), 400
     db = get_db()
-    set_setting(db, "refresh_interval_seconds", interval)
-    return jsonify(refresh_interval_seconds=interval)
+
+    if "refresh_interval_seconds" in data:
+        try:
+            interval = max(0, int(data["refresh_interval_seconds"] or 0))
+        except (TypeError, ValueError):
+            return jsonify(error="Valeur invalide"), 400
+        if 0 < interval < 60:
+            return jsonify(error="L'intervalle minimum est de 60 secondes."), 400
+        set_setting(db, "refresh_interval_seconds", interval)
+
+    if "check_interval_seconds" in data:
+        try:
+            check_interval = max(0, int(data["check_interval_seconds"] or 0))
+        except (TypeError, ValueError):
+            return jsonify(error="Valeur invalide"), 400
+        if 0 < check_interval < 60:
+            return jsonify(error="L'intervalle minimum est de 60 secondes."), 400
+        set_setting(db, "check_interval_seconds", check_interval)
+
+    return jsonify(
+        refresh_interval_seconds=int(get_setting(db, "refresh_interval_seconds", "0") or 0),
+        check_interval_seconds=int(get_setting(db, "check_interval_seconds", "3600") or 3600),
+    )
 
 
 def split_groups(group_title):
@@ -411,7 +435,7 @@ def api_groups():
 
 def serialize_virtual_channel(db, row):
     sources = db.execute(
-        "SELECT id, label, url, position FROM virtual_sources "
+        "SELECT id, label, url, position, check_status FROM virtual_sources "
         "WHERE virtual_channel_id = ? ORDER BY position",
         (row["id"],),
     ).fetchall()
@@ -552,14 +576,15 @@ def api_virtual_reorder_sources(vc_id):
     return jsonify(serialize_virtual_channel(db, row))
 
 
-@app.route("/api/virtual/check")
-def api_virtual_check():
-    db = get_db()
+def run_channel_checks(db):
+    """Check all virtual channel sources concurrently and persist results."""
     rows = db.execute(
         "SELECT vs.id AS src_id, vs.virtual_channel_id AS vc_id, vs.url "
         "FROM virtual_sources vs"
     ).fetchall()
     tasks = [(r["vc_id"], r["src_id"], r["url"]) for r in rows]
+    if not tasks:
+        return {}
 
     def check_one(task):
         vc_id, src_id, url = task
@@ -589,6 +614,31 @@ def api_virtual_check():
     with ThreadPoolExecutor(max_workers=20) as pool:
         for vc_id, src_id, status, resolution in pool.map(check_one, tasks):
             results.setdefault(vc_id, {})[src_id] = {"status": status, "resolution": resolution}
+
+    checked_at = now_iso()
+    for vc_id, src_results in results.items():
+        statuses = [v["status"] for v in src_results.values()]
+        if all(s == "ok" for s in statuses):
+            channel_status = "ok"
+        elif any(s == "ok" for s in statuses):
+            channel_status = "partial"
+        else:
+            channel_status = "down"
+        db.execute(
+            "UPDATE virtual_channels SET check_status = ?, last_checked_at = ? WHERE id = ?",
+            (channel_status, checked_at, vc_id),
+        )
+        for src_id, result in src_results.items():
+            db.execute("UPDATE virtual_sources SET check_status = ? WHERE id = ?", (result["status"], src_id))
+    db.commit()
+    log.info("channel check: %d channels checked", len(results))
+    return results
+
+
+@app.route("/api/virtual/check")
+def api_virtual_check():
+    db = get_db()
+    results = run_channel_checks(db)
     return jsonify(results)
 
 
@@ -612,10 +662,12 @@ def api_export():
         ).fetchone()
         if not has_source:
             continue
+        emoji = STATUS_EMOJI.get(row["check_status"] or "", "")
+        display_name = f"{emoji} {row['name']}" if emoji else row["name"]
         attrs = f'tvg-id="{row["id"]}" tvg-chno="{chno}" group-title="{row["group_title"] or "Lineup"}"'
         if row["logo"]:
             attrs += f' tvg-logo="{base}/channels/logos/{row["id"]}/cache"'
-        lines.append(f'#EXTINF:-1 {attrs},{row["name"]}')
+        lines.append(f'#EXTINF:-1 {attrs},{display_name}')
         lines.append(f"{base}/stream/{row['id']}")
         chno += 1
 
@@ -872,9 +924,39 @@ def scheduler_loop():
         time.sleep(30)
 
 
+def check_scheduler_loop():
+    """Periodically runs channel health checks and persists results.
+    Starts immediately at launch, then fires every check_interval_seconds."""
+    first_run = True
+    while True:
+        try:
+            with closing(sqlite3.connect(DB_PATH)) as db:
+                db.row_factory = sqlite3.Row
+                db.execute("PRAGMA foreign_keys = ON")
+                interval = int(get_setting(db, "check_interval_seconds", "3600") or 3600)
+                if interval > 0:
+                    last = get_setting(db, "check_last_ran_at")
+                    due = True
+                    if last and not first_run:
+                        try:
+                            due = (time.time() - time.mktime(time.strptime(last, "%Y-%m-%dT%H:%M:%S"))) >= interval
+                        except ValueError:
+                            due = True
+                    if due:
+                        log.info("check_scheduler: running channel health checks")
+                        run_channel_checks(db)
+                        set_setting(db, "check_last_ran_at", now_iso())
+                first_run = False
+        except Exception as e:
+            log.error("check_scheduler error: %s", e)
+            first_run = False
+        time.sleep(30)
+
+
 if __name__ == "__main__":
     init_db()
     threading.Thread(target=scheduler_loop, daemon=True).start()
+    threading.Thread(target=check_scheduler_loop, daemon=True).start()
 
     from waitress import serve
 

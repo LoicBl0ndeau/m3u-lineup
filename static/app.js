@@ -111,19 +111,25 @@ async function loadRefreshSetting() {
   const { value, unit } = secondsToValueUnit(data.refresh_interval_seconds || 0);
   el("refresh-value").value = value;
   el("refresh-unit").value = unit;
+  const { value: chkVal, unit: chkUnit } = secondsToValueUnit(data.check_interval_seconds || 3600);
+  el("check-interval-value").value = chkVal;
+  el("check-interval-unit").value = chkUnit;
 }
 
 el("save-refresh-btn").addEventListener("click", async () => {
   const value = Number(el("refresh-value").value) || 0;
   const unit = Number(el("refresh-unit").value);
   const seconds = value > 0 ? Math.round(value * unit) : 0;
+  const chkValue = Number(el("check-interval-value").value) || 0;
+  const chkUnit = Number(el("check-interval-unit").value);
+  const checkSeconds = chkValue > 0 ? Math.round(chkValue * chkUnit) : 0;
   const statusEl = el("refresh-status");
   try {
     await api("/api/settings", {
       method: "POST",
-      body: JSON.stringify({ refresh_interval_seconds: seconds }),
+      body: JSON.stringify({ refresh_interval_seconds: seconds, check_interval_seconds: checkSeconds }),
     });
-    statusEl.textContent = seconds > 0 ? "Enregistré ✓" : "Désactivé";
+    statusEl.textContent = "Enregistré ✓";
     statusEl.className = "refresh-status ok";
   } catch (err) {
     statusEl.textContent = err.message;
@@ -262,6 +268,21 @@ el("add-to-existing-btn").addEventListener("click", async () => {
 
 async function loadVirtualChannels() {
   state.virtualChannels = await api("/api/virtual");
+  // Sync checkResults from persisted DB status, keeping live resolution if available
+  const fresh = {};
+  for (const vc of state.virtualChannels) {
+    if (vc.check_status) {
+      const live = state.checkResults[vc.id] || {};
+      fresh[vc.id] = {};
+      for (const src of vc.sources) {
+        fresh[vc.id][src.id] = {
+          status: src.check_status || "",
+          resolution: (live[src.id] || {}).resolution || null,
+        };
+      }
+    }
+  }
+  state.checkResults = { ...state.checkResults, ...fresh };
   renderVirtualChannels();
 }
 

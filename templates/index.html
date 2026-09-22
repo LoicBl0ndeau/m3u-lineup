@@ -19,16 +19,29 @@
 <section class="panel sources-panel" aria-labelledby="sources-heading">
   <div class="panel-head">
     <h2 id="sources-heading">Sources m3u</h2>
-    <div class="refresh-setting">
-      <label for="refresh-value">Rafraîchissement auto</label>
-      <input type="number" id="refresh-value" min="0" step="1" inputmode="numeric">
-      <select id="refresh-unit">
-        <option value="60">minutes</option>
-        <option value="3600">heures</option>
-        <option value="86400">jours</option>
-      </select>
-      <button type="button" id="save-refresh-btn" class="small ghost">Enregistrer</button>
-      <span id="refresh-status" class="refresh-status"></span>
+    <div class="panel-settings">
+      <div class="refresh-setting">
+        <label for="refresh-value">Rafraîchissement sources</label>
+        <input type="number" id="refresh-value" min="0" step="1" inputmode="numeric">
+        <select id="refresh-unit">
+          <option value="60">min</option>
+          <option value="3600">heures</option>
+          <option value="86400">jours</option>
+        </select>
+      </div>
+      <div class="refresh-setting">
+        <label for="check-interval-value">Vérification chaînes</label>
+        <input type="number" id="check-interval-value" min="0" step="1" inputmode="numeric">
+        <select id="check-interval-unit">
+          <option value="60">min</option>
+          <option value="3600">heures</option>
+          <option value="86400">jours</option>
+        </select>
+      </div>
+      <div class="refresh-setting">
+        <button type="button" id="save-refresh-btn" class="small ghost">Enregistrer</button>
+        <span id="refresh-status" class="refresh-status"></span>
+      </div>
     </div>
   </div>
 

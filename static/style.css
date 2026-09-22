@@ -103,6 +103,13 @@ body {
   max-width: 220px;
 }
 
+.panel-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
 .refresh-setting {
   display: flex;
   align-items: center;

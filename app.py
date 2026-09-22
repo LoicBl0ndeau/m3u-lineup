@@ -687,13 +687,15 @@ def rewrite_hls_manifest(text, base_url, proxy_base=None):
                 # proxy it so requests follows the HTTP redirect to the real .ts file.
                 if proxy_base and not MEDIA_SEGMENT_EXT_RE.search(urlparse(abs_uri).path):
                     encoded = base64.urlsafe_b64encode(abs_uri.encode()).decode().rstrip("=")
-                    abs_uri = f"{proxy_base}/hls-proxy/{encoded}"
+                    abs_uri = f"{proxy_base}/hls-proxy/{encoded}.ts"
             out_lines.append(abs_uri)
     return "\n".join(out_lines) + "\n"
 
 
-@app.route("/hls-proxy/<encoded>")
+@app.route("/hls-proxy/<path:encoded>")
 def hls_proxy(encoded):
+    if encoded.endswith(".ts"):
+        encoded = encoded[:-3]
     padding = (4 - len(encoded) % 4) % 4
     try:
         url = base64.urlsafe_b64decode(encoded + "=" * padding).decode()

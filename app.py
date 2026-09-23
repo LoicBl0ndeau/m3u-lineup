@@ -736,8 +736,13 @@ def rewrite_hls_manifest(text, base_url, proxy_base=None):
     routed through /hls-proxy/ so Lineup can intercept the media playlist and
     resolve any beacon segment URLs before FFmpeg sees them.
     Media playlist segment URLs are resolved directly (beacon → real .ts URL).
+    For live media playlists, the oldest segment is dropped: FFmpeg probes from
+    the end of the window then seeks back to the first segment to start playback,
+    but on short-window live streams that segment has often expired by then.
     """
     is_master = "#EXT-X-STREAM-INF" in text
+    # Live = media playlist with no EXT-X-ENDLIST (VOD/event playlists keep all segments)
+    drop_first_segment = not is_master and "#EXT-X-ENDLIST" not in text
 
     out_lines = []
     for line in text.splitlines():
@@ -753,6 +758,14 @@ def rewrite_hls_manifest(text, base_url, proxy_base=None):
             def _repl(m):
                 uri = m.group(1)
                 abs_uri = uri if ABSOLUTE_URI_RE.match(uri) else urljoin(base_url, uri)
+                if is_master and proxy_base:
+                    encoded = base64.urlsafe_b64encode(abs_uri.encode()).decode().rstrip("=")
+                    abs_uri = f"{proxy_base}/hls-proxy/{encoded}"
+                elif not is_master and proxy_base and urlparse(abs_uri).path.lower().endswith(".fmp4"):
+                    # Init segments (#EXT-X-MAP) with .fmp4 extension: serve under .mp4
+                    # so FFmpeg 8.1's mov demuxer extension check passes.
+                    encoded = base64.urlsafe_b64encode(abs_uri.encode()).decode().rstrip("=")
+                    abs_uri = f"{proxy_base}/seg-proxy/{encoded}.mp4"
                 return f'URI="{abs_uri}"'
             out_lines.append(HLS_URI_ATTR_RE.sub(_repl, line))
         else:
@@ -769,8 +782,55 @@ def rewrite_hls_manifest(text, base_url, proxy_base=None):
                     if out_lines and out_lines[-1].strip().startswith("#EXTINF"):
                         out_lines.pop()
                     continue
+                # For live playlists, drop the oldest segment to avoid the race where
+                # FFmpeg probes later segments first then tries to start from this one,
+                # which has expired on the server by then.
+                if drop_first_segment:
+                    if out_lines and out_lines[-1].strip().startswith("#EXTINF"):
+                        out_lines.pop()
+                    drop_first_segment = False
+                    continue
+                # Route .fmp4 segments through seg-proxy so FFmpeg 8.1's mov demuxer
+                # extension check sees .mp4 rather than the unrecognised .fmp4.
+                if proxy_base and urlparse(abs_uri).path.lower().endswith(".fmp4"):
+                    encoded = base64.urlsafe_b64encode(abs_uri.encode()).decode().rstrip("=")
+                    abs_uri = f"{proxy_base}/seg-proxy/{encoded}.mp4"
             out_lines.append(abs_uri)
     return "\n".join(out_lines) + "\n"
+
+
+@app.route("/seg-proxy/<path:encoded>")
+def seg_proxy(encoded):
+    """Proxy an fmp4 segment under a .mp4 URL.
+
+    FFmpeg 8.1 rejects segments whose extension is not in the mov demuxer's
+    allowed list (.fmp4 is absent).  Serving them as /seg-proxy/<b64>.mp4
+    satisfies the extension check while streaming the bytes from the origin.
+    """
+    if encoded.endswith(".mp4"):
+        encoded = encoded[:-4]
+    padding = (4 - len(encoded) % 4) % 4
+    try:
+        url = base64.urlsafe_b64decode(encoded + "=" * padding).decode()
+    except Exception:
+        abort(400)
+    try:
+        resp = requests.get(url, stream=True, timeout=STREAM_TIMEOUT, headers={"User-Agent": USER_AGENT})
+        if resp.status_code >= 400:
+            abort(resp.status_code)
+
+        def generate():
+            try:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    if chunk:
+                        yield chunk
+            finally:
+                resp.close()
+
+        return Response(stream_with_context(generate()), content_type="video/mp4")
+    except requests.RequestException as e:
+        log.error("seg-proxy %s: %s", url, e)
+        abort(502)
 
 
 @app.route("/hls-proxy/<path:encoded>")

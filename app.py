@@ -580,11 +580,17 @@ def run_channel_checks(db):
     """Check all virtual channel sources concurrently and persist results."""
     rows = db.execute(
         "SELECT vs.id AS src_id, vs.virtual_channel_id AS vc_id, vs.url "
-        "FROM virtual_sources vs"
+        "FROM virtual_sources vs ORDER BY vs.virtual_channel_id, vs.position"
     ).fetchall()
     tasks = [(r["vc_id"], r["src_id"], r["url"]) for r in rows]
     if not tasks:
         return {}
+
+    # First source per channel (lowest position) determines the overall status.
+    primary_src_id = {}
+    for r in rows:
+        if r["vc_id"] not in primary_src_id:
+            primary_src_id[r["vc_id"]] = r["src_id"]
 
     def check_one(task):
         vc_id, src_id, url = task
@@ -617,10 +623,11 @@ def run_channel_checks(db):
 
     checked_at = now_iso()
     for vc_id, src_results in results.items():
-        statuses = [v["status"] for v in src_results.values()]
-        if all(s == "ok" for s in statuses):
+        primary_id = primary_src_id.get(vc_id)
+        primary_ok = primary_id is not None and src_results.get(primary_id, {}).get("status") == "ok"
+        if primary_ok:
             channel_status = "ok"
-        elif any(s == "ok" for s in statuses):
+        elif any(v["status"] == "ok" for v in src_results.values()):
             channel_status = "partial"
         else:
             channel_status = "down"

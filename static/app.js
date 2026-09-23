@@ -315,10 +315,18 @@ function renderVirtualChannels() {
     card.className = "virtual-card" + (vc.active ? "" : " inactive");
 
     const srcResults = state.checkResults[vc.id] || null;
-    const checkStatus = !srcResults ? ""
-      : Object.values(srcResults).every(r => r.status === "ok") ? "ok"
-      : Object.values(srcResults).some(r => r.status === "ok") ? "partial"
-      : "down";
+    let checkStatus = "";
+    if (srcResults && vc.sources.length > 0) {
+      const primaryResult = srcResults[vc.sources[0].id];
+      const primaryOk = primaryResult && primaryResult.status === "ok";
+      if (primaryOk) {
+        checkStatus = "ok";
+      } else if (Object.values(srcResults).some(r => r.status === "ok")) {
+        checkStatus = "partial";
+      } else {
+        checkStatus = "down";
+      }
+    }
     const dotTitle = { ok: "Toutes les sources en ligne", partial: "Certaines sources hors ligne", down: "Toutes les sources hors ligne" }[checkStatus] || "Non vérifié";
 
     const sourcesHtml = vc.sources.map((src, idx) => {

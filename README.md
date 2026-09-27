@@ -7,6 +7,8 @@ lets you pick exactly which channels to keep, group multiple stream links for
 the same channel with automatic failover, then exports the result as a clean
 `.m3u` playlist — ready for Jellyfin, VLC, or any other M3U-compatible player.
 
+<img width="1920" height="1080" alt="UI" src="https://github.com/user-attachments/assets/5a5e12ec-5023-4a27-b824-76918d177ace" />
+
 ![Docker Image](https://img.shields.io/badge/ghcr.io-m3u--lineup-blue)
 
 ---

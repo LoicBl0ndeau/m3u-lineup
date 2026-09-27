@@ -1,48 +1,46 @@
 # Lineup
 
-**Compose ta liste de chaînes IPTV, une chaîne qui marche à la fois.**
+**Compose your IPTV channel list, one working channel at a time.**
 
-Lineup est une petite application self-hosted qui fusionne plusieurs
-playlists `.m3u`, te laisse choisir précisément quelles chaînes garder,
-regrouper plusieurs liens pour une même chaîne avec bascule automatique
-en cas de panne, puis exporte le résultat comme une playlist `.m3u`
-propre — prête pour Jellyfin, VLC, ou tout autre lecteur compatible M3U.
+Lineup is a lightweight self-hosted app that merges several `.m3u` playlists,
+lets you pick exactly which channels to keep, group multiple stream links for
+the same channel with automatic failover, then exports the result as a clean
+`.m3u` playlist — ready for Jellyfin, VLC, or any other M3U-compatible player.
 
-![Image Docker](https://img.shields.io/badge/ghcr.io-m3u--lineup-blue)
+![Docker Image](https://img.shields.io/badge/ghcr.io-m3u--lineup-blue)
 
 ---
 
-## ✨ Fonctionnalités
+## ✨ Features
 
-- **Multi-sources** : ajoute autant de liens `.m3u` que tu veux, leurs
-  chaînes sont fusionnées et cherchables depuis une seule interface.
-- **Recherche & filtres** : par nom ou par groupe.
-- **Fallback automatique** : regroupe plusieurs liens pour une même
-  chaîne (ex. une source HD + une source de secours) — si le premier ne
-  répond pas, le suivant est essayé automatiquement.
-- **Réordonnancement par glisser-déposer** : trie ta lineup à la main,
-  l'ordre définit les numéros de chaîne (`tvg-chno`) dans l'export.
-- **Vérification automatique des streams** : Lineup teste l'état de chaque
-  source à une fréquence configurable et encode le résultat dans le nom de
-  la chaîne exportée (`🟢 Disponible`, `🟡 Au moins une source non disponible`, `🔴 Non disponible`). Dans Jellyfin,
-  configure le même intervalle de rafraîchissement du tuner M3U pour voir
-  l'état des chaînes directement dans l'interface, avant même de cliquer.
-- **Rafraîchissement automatique** : relance le téléchargement de tes
-  sources à une fréquence personnalisable.
-- **Support HLS avancé** : les manifests `.m3u8` sont détectés et
-  réécrits pour que le lecteur récupère les segments directement depuis
-  la source ; les URLs de tracking/beacon sont filtrées automatiquement.
-- **Cache de logos** : les images des chaînes sont mises en cache
-  localement, une seule fois.
-- **Léger** : un seul conteneur Python/Flask + SQLite, pensé pour tourner
-  sur un petit VPS (entre 20 et 40MB de RAM).
+- **Multi-source**: add as many `.m3u` links as you want; their channels are
+  merged and searchable from a single interface.
+- **Search & filters**: by name or by group.
+- **Automatic failover**: group multiple links for the same channel (e.g. an
+  HD source + a backup) — if the first one fails, the next is tried
+  automatically.
+- **Drag-and-drop reordering**: sort your lineup by hand; the order defines
+  the channel numbers (`tvg-chno`) in the export.
+- **Automatic stream health checks**: Lineup tests each source on a
+  configurable schedule and encodes the result into the exported channel name
+  (`🟢 Available`, `🟡 Primary offline, fallback available`, `🔴 Unavailable`).
+  In Jellyfin, set the same refresh interval on your M3U Tuner to see channel
+  status directly in the UI before you even click.
+- **Automatic refresh**: re-downloads your sources on a configurable schedule.
+- **Advanced HLS support**: `.m3u8` manifests are detected and rewritten so
+  the player fetches segments directly from the origin; tracking/beacon URLs
+  are filtered out automatically. fmp4/CMAF streams with separate audio tracks
+  are fully supported.
+- **Logo cache**: channel artwork is downloaded and cached locally once.
+- **Lightweight**: a single Python/Flask + SQLite container, designed to run
+  on a small VPS (20–40 MB RAM).
 
-## 🚀 Démarrage rapide
+## 🚀 Quick start
 
-Aucun besoin de cloner le dépôt ni de builder quoi que ce soit — l'image
-est publiée automatiquement sur GitHub Container Registry.
+No need to clone the repo or build anything — the image is published
+automatically to GitHub Container Registry.
 
-Crée un fichier `docker-compose.yml` :
+Create a `docker-compose.yml` file:
 
 ```yaml
 services:
@@ -68,9 +66,9 @@ services:
     cap_drop:
       - ALL
     cap_add:
-      - CHOWN      # entrypoint.sh doit pouvoir chown /data au démarrage
-      - SETUID     # requis par su-exec pour passer à l'utilisateur non-root
-      - SETGID     # idem, côté groupe
+      - CHOWN      # entrypoint.sh needs to chown /data at startup
+      - SETUID     # required by su-exec to drop to the non-root user
+      - SETGID     # same, for the group
     security_opt:
       - no-new-privileges:true
 
@@ -78,84 +76,67 @@ volumes:
   lineup-data:
 ```
 
-Puis :
+Then:
 
 ```bash
 docker compose up -d
 ```
 
-L'interface est disponible sur `http://<ton-serveur>:9999`.
+The UI is available at `http://<your-server>:9999`.
 
-## 🖥️ Utilisation
+## 🖥️ Usage
 
-1. Dans **Sources m3u**, ajoute un ou plusieurs liens `.m3u`. Les
-   chaînes apparaissent fusionnées dans la liste de recherche.
-2. Cherche une chaîne, clique **+** → crée une nouvelle chaîne dans ta
-   lineup, ou ajoute le lien comme secours à une chaîne déjà créée.
-3. Réordonne les liens d'une chaîne (le premier est essayé en premier),
-   active/désactive, renomme ou supprime depuis **Ta lineup**.
-4. Fais glisser les cartes de chaîne pour les réordonner — l'ordre
-   définit les numéros de chaîne dans le fichier exporté.
-5. Configure l'intervalle de **Vérification chaînes** dans le panneau
-   Sources (défaut : 1 heure). Lineup testera automatiquement chaque
-   source en arrière-plan ; le résultat apparaît sous forme de point
-   coloré dans l'interface et sous forme d'emoji dans le `.m3u` exporté.
-6. Clique **Exporter le .m3u** pour télécharger la playlist finale, ou
-   donne directement l'URL `http://<ton-serveur>:9999/api/export` à ton
-   lecteur (dans Jellyfin : **Dashboard → Live TV → Tuner Devices → M3U
-   Tuner**). Pour voir les emojis d'état se mettre à jour dans Jellyfin,
-   configure le même intervalle de rafraîchissement sur ton tuner M3U.
+1. In **M3U Sources**, add one or more `.m3u` links. Channels appear merged
+   in the search list.
+2. Search for a channel, click **+** → create a new channel in your lineup,
+   or add the link as a fallback to an existing one.
+3. Reorder the links for a channel (the first is tried first), toggle,
+   rename or delete from **Your lineup**.
+4. Drag channel cards to reorder them — the order defines the channel numbers
+   in the exported file.
+5. Configure the **Channel check** interval in the Sources panel (default:
+   1 hour). Lineup will automatically test each source in the background; the
+   result appears as a coloured dot in the UI and as an emoji in the exported
+   `.m3u`.
+6. Click **Export .m3u** to download the final playlist, or give the URL
+   `http://<your-server>:9999/api/export` directly to your player (in
+   Jellyfin: **Dashboard → Live TV → Tuner Devices → M3U Tuner**). To see
+   status emojis update in Jellyfin, set the same refresh interval on your
+   M3U Tuner.
 
 ## ⚙️ Configuration
 
-Variables d'environnement, toutes optionnelles :
+All environment variables are optional:
 
-| Variable            | Défaut                    | Description                                      |
-|----------------------|---------------------------|---------------------------------------------------|
-| `DB_PATH`            | `/data/lineup.sqlite3`    | Emplacement de la base SQLite                     |
-| `LOGO_CACHE_DIR`      | `/data/logos`             | Dossier de cache des logos de chaînes             |
-| `LISTEN_PORT`         | `9999`                    | Port HTTP interne au conteneur                    |
-| `FETCH_TIMEOUT`       | `20`                      | Timeout (s) pour télécharger un m3u source         |
-| `STREAM_TIMEOUT`      | `8`                       | Timeout (s) pour tester/proxier un flux            |
-| `STREAM_USER_AGENT`   | `Mozilla/5.0 (Lineup)`    | User-Agent envoyé aux serveurs IPTV                |
+| Variable            | Default                   | Description                                      |
+|---------------------|---------------------------|--------------------------------------------------|
+| `DB_PATH`           | `/data/lineup.sqlite3`    | SQLite database path                             |
+| `LOGO_CACHE_DIR`    | `/data/logos`             | Channel logo cache directory                     |
+| `LISTEN_PORT`       | `9999`                    | HTTP port inside the container                   |
+| `FETCH_TIMEOUT`     | `20`                      | Timeout (s) for downloading a source m3u         |
+| `STREAM_TIMEOUT`    | `8`                       | Timeout (s) for probing / proxying a stream      |
+| `STREAM_USER_AGENT` | `Mozilla/5.0 (Lineup)`    | User-Agent sent to IPTV servers                  |
 
-## 🧠 Comment ça marche
+## 🧠 How it works
 
-- Chaque source `.m3u` est parsée et stockée en base ; ses chaînes sont
-  identifiées par leur `tvg-id` (ou leur nom si absent).
-- Une "chaîne" de ta lineup est une liste ordonnée de liens source.
-  `/stream/<id>` essaie chaque lien dans l'ordre et sert le premier qui
-  répond — pour un manifest HLS, seuls les chemins relatifs sont réécrits
-  en URLs absolues, les segments sont ensuite chargés directement depuis
-  le serveur d'origine.
-- Au rafraîchissement d'une source (manuel ou automatique), Lineup
-  retrouve les chaînes de ta lineup issues de cette source et met à jour
-  leur URL si elle a changé, avant de régénérer la liste des chaînes
-  disponibles. `/api/export` lit toujours la base en direct : le fichier
-  exporté reflète immédiatement tout changement.
+- Each `.m3u` source is parsed and stored in the database; channels are
+  identified by their `tvg-id` (or lowercased name if absent).
+- A lineup "channel" is an ordered list of source links. `/stream/<id>` tries
+  each link in order and serves the first that responds — for an HLS manifest,
+  relative paths are rewritten to absolute URLs and segments are fetched
+  directly from the origin server.
+- When a source is refreshed (manually or automatically), Lineup finds the
+  lineup channels linked to that source and updates their URL if it changed,
+  then regenerates the available channel list. `/api/export` always reads live
+  from the database — the exported file reflects every change immediately.
 
-## 🛠️ Développement / build local
+## ⚠️ Known limitations
 
-```bash
-git clone https://github.com/loicblondeau/m3u-lineup.git
-cd m3u-lineup
-docker build -t lineup-dev .
-docker run --rm -p 9999:9999 -v lineup-dev-data:/data lineup-dev
-```
-
-Un push sur `main` republie automatiquement l'image via GitHub Actions
-(`.github/workflows/docker-publish.yml`).
-
-## ⚠️ Limites connues
-
-- Le fallback entre liens est vérifié à l'ouverture du flux, pas en
-  cours de lecture — si un lien tombe en panne pendant la lecture, il
-  faut relancer la lecture côté lecteur pour déclencher un nouvel essai.
-- Une chaîne ajoutée à ta lineup depuis une source ensuite supprimée
-  n'est plus rattachée à aucune source et ne sera plus réconciliée
-  automatiquement.
-- Process unique, pas de queue/cache lourd : pensé pour un usage
-  personnel avec quelques flux simultanés, pas pour de la diffusion à
-  grande échelle.
-- Aucune authentification intégrée — si tu exposes le port au-delà de
-  `127.0.0.1`, mets une authentification devant via ton reverse proxy.
+- Failover is checked when the stream is opened, not during playback — if a
+  link goes down mid-stream, the player must restart to trigger a new attempt.
+- A channel added from a source that is later deleted is no longer linked to
+  any source and will not be reconciled automatically.
+- Single process, no heavy queue or cache: designed for personal use with a
+  few concurrent streams, not large-scale distribution.
+- No built-in authentication — if you expose the port beyond `127.0.0.1`,
+  add authentication in front via your reverse proxy.

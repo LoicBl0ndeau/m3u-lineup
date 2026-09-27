@@ -217,7 +217,7 @@ def parse_m3u(text):
                 j += 1
             if j < len(lines) and lines[j].strip():
                 yield {
-                    "name": title or attrs.get("tvg-name", "Sans nom"),
+                    "name": title or attrs.get("tvg-name", "Unnamed"),
                     "group_title": attrs.get("group-title", ""),
                     "tvg_logo": attrs.get("tvg-logo", ""),
                     "tvg_id": attrs.get("tvg-id", ""),
@@ -255,7 +255,7 @@ def refresh_source(db, source_row):
         resp.raise_for_status()
         channels = list(parse_m3u(resp.text))
         if not channels:
-            raise ValueError("Aucune chaîne trouvée dans ce m3u")
+            raise ValueError("No channels found in this m3u")
     except Exception as e:
         log.warning("source %s refresh failed: %s", source_row["url"], e)
         db.execute(
@@ -309,11 +309,11 @@ def api_sources_create():
     url = (data.get("url") or "").strip()
     label = (data.get("label") or "").strip()
     if not url:
-        return jsonify(error="URL manquante"), 400
+        return jsonify(error="Missing URL"), 400
 
     db = get_db()
     if db.execute("SELECT 1 FROM sources WHERE url = ?", (url,)).fetchone():
-        return jsonify(error="Cette source est déjà ajoutée"), 409
+        return jsonify(error="Source already added"), 409
 
     cur = db.execute(
         "INSERT INTO sources (url, label, created_at) VALUES (?, ?, ?)",
@@ -326,7 +326,7 @@ def api_sources_create():
     if not result["ok"]:
         db.execute("DELETE FROM sources WHERE id = ?", (source_row["id"],))
         db.commit()
-        return jsonify(error=f"Échec du téléchargement : {result['error']}"), 502
+        return jsonify(error=f"Download failed: {result['error']}"), 502
 
     source_row = db.execute("SELECT * FROM sources WHERE id = ?", (source_row["id"],)).fetchone()
     return jsonify(dict(source_row)), 201
@@ -368,18 +368,18 @@ def api_settings_update():
         try:
             interval = max(0, int(data["refresh_interval_seconds"] or 0))
         except (TypeError, ValueError):
-            return jsonify(error="Valeur invalide"), 400
+            return jsonify(error="Invalid value"), 400
         if 0 < interval < 60:
-            return jsonify(error="L'intervalle minimum est de 60 secondes."), 400
+            return jsonify(error="Minimum interval is 60 seconds."), 400
         set_setting(db, "refresh_interval_seconds", interval)
 
     if "check_interval_seconds" in data:
         try:
             check_interval = max(0, int(data["check_interval_seconds"] or 0))
         except (TypeError, ValueError):
-            return jsonify(error="Valeur invalide"), 400
+            return jsonify(error="Invalid value"), 400
         if 0 < check_interval < 60:
-            return jsonify(error="L'intervalle minimum est de 60 secondes."), 400
+            return jsonify(error="Minimum interval is 60 seconds."), 400
         set_setting(db, "check_interval_seconds", check_interval)
 
     return jsonify(
@@ -457,7 +457,7 @@ def api_virtual_create():
     data = request.get_json(force=True, silent=True) or {}
     name = (data.get("name") or "").strip()
     if not name:
-        return jsonify(error="Nom manquant"), 400
+        return jsonify(error="Missing name"), 400
     source = data.get("source")  # optional {label, url, tvg_logo, tvg_id, source_id}
     logo = data.get("logo") or (source or {}).get("tvg_logo", "") or ""
 
@@ -502,7 +502,7 @@ def api_virtual_reorder():
     data = request.get_json(force=True, silent=True) or {}
     ids = data.get("ids", [])
     if not isinstance(ids, list):
-        return jsonify(error="ids doit être une liste"), 400
+        return jsonify(error="ids must be a list"), 400
     db = get_db()
     for pos, vid in enumerate(ids):
         db.execute("UPDATE virtual_channels SET position = ? WHERE id = ?", (pos, vid))
@@ -526,7 +526,7 @@ def api_virtual_add_source(vc_id):
     data = request.get_json(force=True, silent=True) or {}
     url = (data.get("url") or "").strip()
     if not url:
-        return jsonify(error="URL manquante"), 400
+        return jsonify(error="Missing URL"), 400
     label = data.get("label", "")
     match_key = data.get("tvg_id") or label.strip().lower()
     db = get_db()
@@ -962,7 +962,7 @@ def stream(vc_id):
             continue
 
     log.error("stream %d: all sources failed, last error: %s", vc_id, last_error)
-    return Response(f"Toutes les sources ont échoué : {last_error}", status=503)
+    return Response(f"All sources failed: {last_error}", status=503)
 
 
 def scheduler_loop():

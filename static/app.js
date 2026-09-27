@@ -31,7 +31,7 @@ async function api(path, options) {
 // ---------------------------------------------------------------------------
 
 function formatDateTime(isoLike) {
-  if (!isoLike) return "jamais";
+  if (!isoLike) return "never";
   // stored as "YYYY-MM-DDTHH:MM:SS" in the server's local time
   const d = new Date(isoLike);
   if (isNaN(d.getTime())) return isoLike;
@@ -44,17 +44,17 @@ async function loadSources() {
   list.innerHTML = "";
 
   if (!sources.length) {
-    list.innerHTML = '<p class="empty-sources">Aucune source ajoutée pour l\'instant.</p>';
+    list.innerHTML = '<p class="empty-sources">No source added yet.</p>';
     return;
   }
 
   for (const src of sources) {
     const li = document.createElement("li");
     li.className = "source-item " + (src.last_status || "");
-    const lastFetch = `dernier fetch : ${formatDateTime(src.last_fetched_at)}`;
+    const lastFetch = `last fetch: ${formatDateTime(src.last_fetched_at)}`;
     const detail = src.last_status === "error"
-      ? `Erreur : ${src.last_error} — ${lastFetch}`
-      : `${src.channel_count} chaîne(s) — ${lastFetch} — ${src.url}`;
+      ? `Error: ${src.last_error} — ${lastFetch}`
+      : `${src.channel_count} channel(s) — ${lastFetch} — ${src.url}`;
     li.innerHTML = `
       <span class="status-dot" title="${escapeAttr(src.last_status || "en attente")}"></span>
       <div class="meta">
@@ -62,8 +62,8 @@ async function loadSources() {
         <div class="detail" title="${escapeAttr(src.url)}">${escapeHtml(detail)}</div>
       </div>
       <div class="actions">
-        <button class="icon small refresh-source" title="Rafraîchir maintenant">↻</button>
-        <button class="icon small remove-source-file" title="Supprimer cette source">✕</button>
+        <button class="icon small refresh-source" title="Refresh now">↻</button>
+        <button class="icon small remove-source-file" title="Delete this source">✕</button>
       </div>
     `;
     li.querySelector(".refresh-source").addEventListener("click", async (e) => {
@@ -76,7 +76,7 @@ async function loadSources() {
       }
     });
     li.querySelector(".remove-source-file").addEventListener("click", async () => {
-      if (!confirm(`Supprimer la source « ${src.label || src.url} » ?`)) return;
+      if (!confirm(`Delete source "${src.label || src.url}"?`)) return;
       await api(`/api/sources/${src.id}`, { method: "DELETE" });
       await Promise.all([loadSources(), loadGroups(), loadChannels()]);
     });
@@ -129,7 +129,7 @@ el("save-refresh-btn").addEventListener("click", async () => {
       method: "POST",
       body: JSON.stringify({ refresh_interval_seconds: seconds, check_interval_seconds: checkSeconds }),
     });
-    statusEl.textContent = "Enregistré ✓";
+    statusEl.textContent = "Saved ✓";
     statusEl.className = "refresh-status ok";
   } catch (err) {
     statusEl.textContent = err.message;
@@ -149,7 +149,7 @@ async function loadGroups() {
   const groups = await api("/api/groups");
   const select = el("group-filter");
   const current = select.value;
-  select.innerHTML = '<option value="">Tous les groupes</option>' +
+  select.innerHTML = '<option value="">All groups</option>' +
     groups.map((g) => `<option value="${escapeAttr(g)}">${escapeHtml(g)}</option>`).join("");
   select.value = current;
 }
@@ -173,12 +173,13 @@ async function loadChannels() {
         <div class="name">${escapeHtml(ch.name)}</div>
         ${ch.group_title ? `<div class="group">${escapeHtml(ch.group_title.split(";").map((g) => g.trim()).filter(Boolean).join(" · "))}</div>` : ""}
       </div>
-      <button class="icon small add-btn" title="Ajouter à la lineup">+</button>
+      <button class="icon small add-btn" title="Add to lineup">+</button>
     `;
     li.querySelector(".add-btn").addEventListener("click", () => openAddPopover(ch));
     list.appendChild(li);
   }
 }
+
 
 el("search-input").addEventListener("input", debounce(loadChannels, 250));
 el("group-filter").addEventListener("change", loadChannels);
@@ -199,7 +200,7 @@ function openAddPopover(channel) {
   el("new-channel-name").value = channel.name;
 
   const select = el("existing-channel-select");
-  select.innerHTML = '<option value="">— choisir —</option>' +
+  select.innerHTML = '<option value="">— choose —</option>' +
     state.virtualChannels
       .map((vc) => `<option value="${vc.id}">${escapeHtml(vc.name)} (${vc.sources.length} lien${vc.sources.length > 1 ? "s" : ""})</option>`)
       .join("");
@@ -289,7 +290,7 @@ async function loadVirtualChannels() {
 async function checkAllChannels() {
   const btn = el("check-btn");
   btn.disabled = true;
-  btn.textContent = "Vérification…";
+  btn.textContent = "Checking…";
   try {
     state.checkResults = await api("/api/virtual/check");
     renderVirtualChannels();
@@ -297,7 +298,7 @@ async function checkAllChannels() {
     alert(err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Vérifier";
+    btn.textContent = "Check";
   }
 }
 
@@ -327,13 +328,13 @@ function renderVirtualChannels() {
         checkStatus = "down";
       }
     }
-    const dotTitle = { ok: "Toutes les sources en ligne", partial: "Certaines sources hors ligne", down: "Toutes les sources hors ligne" }[checkStatus] || "Non vérifié";
+    const dotTitle = { ok: "All sources online", partial: "Primary source offline, fallback available", down: "All sources offline" }[checkStatus] || "Unchecked";
 
     const sourcesHtml = vc.sources.map((src, idx) => {
       const result = srcResults ? (srcResults[src.id] || null) : null;
       const s = result ? result.status : "";
       const res = result ? result.resolution : null;
-      const sTitle = s === "ok" ? "En ligne" : s === "down" ? "Hors ligne" : "Non vérifié";
+      const sTitle = s === "ok" ? "Online" : s === "down" ? "Offline" : "Unchecked";
       return `
       <li class="source-row" data-source-id="${src.id}">
         <span class="source-rank">${idx + 1}</span>
@@ -341,9 +342,9 @@ function renderVirtualChannels() {
         <span class="url" title="${escapeAttr(src.url)}">${escapeHtml(src.label || src.url)}</span>
         ${res ? `<span class="src-res">${escapeHtml(res)}</span>` : ""}
         <span class="source-actions">
-          <button class="icon small move-up" title="Monter" ${idx === 0 ? "disabled" : ""}>↑</button>
-          <button class="icon small move-down" title="Descendre" ${idx === vc.sources.length - 1 ? "disabled" : ""}>↓</button>
-          <button class="icon small remove-source" title="Retirer">✕</button>
+          <button class="icon small move-up" title="Move up" ${idx === 0 ? "disabled" : ""}>↑</button>
+          <button class="icon small move-down" title="Move down" ${idx === vc.sources.length - 1 ? "disabled" : ""}>↓</button>
+          <button class="icon small remove-source" title="Remove">✕</button>
         </span>
       </li>
     `;
@@ -351,7 +352,7 @@ function renderVirtualChannels() {
 
     card.innerHTML = `
       <div class="virtual-card-head">
-        <span class="drag-handle" draggable="true" title="Réordonner">⠿</span>
+        <span class="drag-handle" draggable="true" title="Reorder">⠿</span>
         <span class="vc-status ${checkStatus}" title="${dotTitle}"></span>
         <label class="toggle">
           <input type="checkbox" class="active-toggle" ${vc.active ? "checked" : ""}>
@@ -361,7 +362,7 @@ function renderVirtualChannels() {
         <input class="name-input" type="text" value="${escapeAttr(vc.name)}">
         <button class="danger small delete-btn">Supprimer</button>
       </div>
-      <ul class="source-list">${sourcesHtml || '<li class="empty-state">Aucun lien source.</li>'}</ul>
+      <ul class="source-list">${sourcesHtml || '<li class="empty-state">No source links.</li>'}</ul>
     `;
 
     card.querySelector(".active-toggle").addEventListener("change", (e) =>
@@ -439,7 +440,7 @@ async function updateVirtualChannel(id, patch) {
 }
 
 async function deleteVirtualChannel(id) {
-  if (!confirm("Supprimer cette chaîne de la lineup ?")) return;
+  if (!confirm("Remove this channel from the lineup?")) return;
   await api(`/api/virtual/${id}`, { method: "DELETE" });
   await loadVirtualChannels();
 }
